@@ -22,82 +22,7 @@ from torch.utils.data import random_split,ConcatDataset
 
 # %matplotlib inline
 
-stats = ((0.5074,0.4867,0.4411),(0.2011,0.1987,0.2025))
-train_transform = tt.Compose([
-    tt.RandomHorizontalFlip(),
-    tt.RandomCrop(32,padding=4,padding_mode="reflect"),
-    tt.ToTensor(),
-    tt.Normalize(*stats)
-])
 
-test_transform = tt.Compose([
-    tt.ToTensor(),
-    tt.Normalize(*stats)
-])
-
-train_data = CIFAR100(download=True,root="./data",transform=train_transform)
-test_data = CIFAR100(root="./data",train=False,transform=test_transform)
-
-# for image,label in train_data:
-    # print("Image shape: ",image.shape)
-    # print("Image tensor: ", image)
-    # print("Label: ", label)
-
-train_data.classes
-print(train_data.classes)
-
-"""Word2vec"""
-
-import gensim
-import gensim.downloader
-words=[]
-for word in train_data.classes:
-  if '_' in word:
-    words.append(word.split('_')[0])
-  else:
-    words.append(word)
-glove_vectors = gensim.downloader.load('glove-wiki-gigaword-300')
-label_embdding = []
-for w in words:
-  if w in glove_vectors.vocab:
-    label_embdding.append(glove_vectors[w])
-  else:
-    label_embdding.append(glove_vectors['unknown'])
-
-"""Bert"""
-
-! pip install transformers
-
-from transformers import BertTokenizer, BertModel
-def getberthidden(text):
-  tokenizer=BertTokenizer.from_pretrained('bert-base-uncased')
-  marked_text="[CLS]"+text+"[SEP]"
-  tokenized_text=tokenizer.tokenize(marked_text)
-  indexed_tokens=tokenizer.convert_tokens_to_ids(tokenized_text)
-  segments_ids=[1]*len(tokenized_text)
-  tokens_tensor=torch.tensor([indexed_tokens])
-  segments_tensors=torch.tensor([segments_ids])
-  model=BertModel.from_pretrained('bert-base-uncased',output_hidden_states=True,)
-  model.eval()
-  with torch.no_grad():
-    outputs=model(tokens_tensor,segments_tensors)
-    hidden_states=outputs[0]
-  return hidden_states
-
-words=[]
-for word in train_data.classes:
-  if '_' in word:
-    words.append(word.split('_')[0])
-  else:
-    words.append(word)
-label_embdding = []
-for w in words:
-  output=getberthidden(w)
-  label_embdding.append(output[0][0])
-
-BATCH_SIZE=128
-train_dl = DataLoader(train_data,BATCH_SIZE,num_workers=4,pin_memory=True,shuffle=True)
-test_dl = DataLoader(test_data,BATCH_SIZE,num_workers=4,pin_memory=True)
 
 def get_device():
     if torch.cuda.is_available():
@@ -122,11 +47,7 @@ class ToDeviceLoader:
     def __len__(self):
         return len(self.data)
 
-device = get_device()
-print(device)
 
-train_dl = ToDeviceLoader(train_dl,device)
-test_dl = ToDeviceLoader(test_dl,device)
 
 def accuracy(predicted,actual):
     _, predictions = torch.max(predicted,dim=1)
@@ -144,7 +65,7 @@ class BaseModel(nn.Module):
         target=torch.tensor(np.array(target)).cuda()
         out1,out2 = self(images)
         criterition=torch.nn.CosineEmbeddingLoss()
-        loss = F.cross_entropy(out1,labels)+criterition(out2,similarity_batches,target)
+        loss = F.cross_entropy(out1,labels)+0.01*criterition(out2,similarity_batches,target)
         return loss
     
     def validation_step(self,batch):
@@ -254,9 +175,7 @@ class Resnet50(BaseModel):
         out2=self.semanticdense(out)
         return out1,out2
 
-model = Resnet50(3,100)
 
-model = to_device(model,device)
 
 @torch.no_grad()
 def evaluate(model,test_dl):
@@ -308,19 +227,11 @@ def fit (epochs,train_dl,test_dl,model,optimizer,max_lr,weight_decay,scheduler,g
         
     return history
 
-history = [evaluate(model,test_dl)]
 
-epochs = 25
-optimizer = torch.optim.Adam
-max_lr=0.01
-grad_clip = 0.1
-weight_decay = 1e-4
-scheduler = torch.optim.lr_scheduler.OneCycleLR
 
 # Commented out IPython magic to ensure Python compatibility.
 # %%time
-# history += fit(epochs=epochs,train_dl=train_dl,test_dl=test_dl,model=model,optimizer=optimizer,max_lr=max_lr,grad_clip=grad_clip,
-#               weight_decay=weight_decay,scheduler=torch.optim.lr_scheduler.OneCycleLR)
+
 
 def plot_acc(history):
     plt.plot([x["val_acc"] for x in history],"-x")
@@ -339,10 +250,110 @@ def plot_lrs(history):
     plt.xlabel("Batch number")
     plt.ylabel("Learning rate")
 
-plot_loss(history)
 
-plot_acc(history)
 
-plot_lrs(history)
+if __name__ == '__main__':
+    stats = ((0.5074, 0.4867, 0.4411), (0.2011, 0.1987, 0.2025))
+    train_transform = tt.Compose([
+        tt.RandomHorizontalFlip(),
+        tt.RandomCrop(32, padding=4, padding_mode="reflect"),
+        tt.ToTensor(),
+        tt.Normalize(*stats)
+    ])
 
-torch.save(model.state_dict(), 'cifar100-resnet.pth')
+    test_transform = tt.Compose([
+        tt.ToTensor(),
+        tt.Normalize(*stats)
+    ])
+
+    train_data = CIFAR100(download=False, root="./data", transform=train_transform)
+    test_data = CIFAR100(root="./data", train=False, transform=test_transform)
+
+    # for image,label in train_data:
+    # print("Image shape: ",image.shape)
+    # print("Image tensor: ", image)
+    # print("Label: ", label)
+
+    # train_data.classes
+    # print(train_data.classes)
+
+    """Word2vec"""
+
+    # import gensim
+    # import gensim.downloader
+    # words=[]
+    # for word in train_data.classes:
+    #   if '_' in word:
+    #     words.append(word.split('_')[0])
+    #   else:
+    #     words.append(word)
+    # glove_vectors = gensim.downloader.load('glove-wiki-gigaword-300')
+    # label_embdding = []
+    # for w in words:
+    #   if w in glove_vectors.vocab:
+    #     label_embdding.append(glove_vectors[w])
+    #   else:
+    #     label_embdding.append(glove_vectors['unknown'])
+    #
+    # """Bert"""
+    #
+    # ! pip install transformers
+
+    from transformers import BertTokenizer, BertModel
+
+
+    def getberthidden(text):
+        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        marked_text = "[CLS]" + text + "[SEP]"
+        tokenized_text = tokenizer.tokenize(marked_text)
+        indexed_tokens = tokenizer.convert_tokens_to_ids(tokenized_text)
+        segments_ids = [1] * len(tokenized_text)
+        tokens_tensor = torch.tensor([indexed_tokens])
+        segments_tensors = torch.tensor([segments_ids])
+        model = BertModel.from_pretrained('bert-base-uncased', output_hidden_states=True, )
+        model.eval()
+        with torch.no_grad():
+            outputs = model(tokens_tensor, segments_tensors)
+            hidden_states = outputs[0]
+        return hidden_states
+
+
+    words = []
+    for word in train_data.classes:
+        if '_' in word:
+            words.append(word.split('_')[0])
+        else:
+            words.append(word)
+    label_embdding = []
+    for w in words:
+        output = getberthidden(w)
+        label_embdding.append(output[0][0])
+
+    BATCH_SIZE = 128
+    train_dl = DataLoader(train_data, BATCH_SIZE, num_workers=4, pin_memory=True, shuffle=True)
+    test_dl = DataLoader(test_data, BATCH_SIZE, num_workers=4, pin_memory=True)
+    device = get_device()
+
+    train_dl = ToDeviceLoader(train_dl, device)
+    test_dl = ToDeviceLoader(test_dl, device)
+    model = Resnet50(3, 100)
+
+    model = to_device(model, device)
+    history = [evaluate(model, test_dl)]
+
+    epochs = 25
+    optimizer = torch.optim.Adam
+    max_lr = 0.01
+    grad_clip = 0.1
+    weight_decay = 1e-4
+    scheduler = torch.optim.lr_scheduler.OneCycleLR
+    history += fit(epochs=epochs, train_dl=train_dl, test_dl=test_dl, model=model, optimizer=optimizer, max_lr=max_lr,
+                   grad_clip=grad_clip,
+                   weight_decay=weight_decay, scheduler=torch.optim.lr_scheduler.OneCycleLR)
+    # plot_loss(history)
+    #
+    # plot_acc(history)
+    #
+    # plot_lrs(history)
+    #
+    # torch.save(model.state_dict(), 'cifar100-resnet.pth')
